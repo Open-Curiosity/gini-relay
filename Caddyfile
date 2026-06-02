@@ -1,0 +1,17 @@
+# Public TLS termination + routing, using the certbot wildcard cert under
+# /etc/letsencrypt (must cover BOTH the apex and *.gini-relay.lilaclabs.ai).
+
+# Apex: the control plane (loopback OAuth login, /devices). /_frp/* is the internal
+# frps RPC and must never be reachable from the public side.
+gini-relay.lilaclabs.ai {
+	tls /etc/letsencrypt/live/gini-relay.lilaclabs.ai/fullchain.pem /etc/letsencrypt/live/gini-relay.lilaclabs.ai/privkey.pem
+	@internal path /_frp/*
+	respond @internal 404
+	reverse_proxy brain:9100
+}
+
+# Wildcard: every tunnel. Caddy terminates TLS; frps routes by Host header.
+*.gini-relay.lilaclabs.ai {
+	tls /etc/letsencrypt/live/gini-relay.lilaclabs.ai/fullchain.pem /etc/letsencrypt/live/gini-relay.lilaclabs.ai/privkey.pem
+	reverse_proxy frps:8080
+}

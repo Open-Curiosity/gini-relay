@@ -1,0 +1,31 @@
+name: deploy
+
+# Pushing to main (or a manual run) deploys on the self-hosted runner that lives
+# on the host owning gini-relay.lilaclabs.ai.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted]
+    # Secrets come from GitHub's encrypted store and are injected as env vars for
+    # this job only. No .env file is ever written to the runner's disk; docker
+    # compose substitutes ${...} from this environment into the container config.
+    environment: production
+    env:
+      FRP_AUTH_TOKEN: ${{ secrets.FRP_AUTH_TOKEN }}
+      GINI_GOOGLE_CLIENT_ID: ${{ secrets.GINI_GOOGLE_CLIENT_ID }}
+      GINI_GOOGLE_CLIENT_SECRET: ${{ secrets.GINI_GOOGLE_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy stack
+        run: docker compose up -d --build --remove-orphans
+      - name: Prune dangling images
+        if: always()
+        run: docker image prune -f

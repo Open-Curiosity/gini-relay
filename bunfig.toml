@@ -1,0 +1,9 @@
+[test]
+coverage = true
+coverageReporter = ["text", "lcov"]
+coverageDir = "coverage"
+# 1 == 100% (bun reads the threshold as a 0-1 fraction). Do not lower.
+coverageThreshold = { lines = 1, functions = 1 }
+coverageSkipTestFiles = true
+# Thin entrypoints (bin) and non-source dirs carry no unit-testable logic.
+coveragePathIgnorePatterns = ["src/client/bin.ts", "src/server/bin.ts", "scripts/", "test/"]

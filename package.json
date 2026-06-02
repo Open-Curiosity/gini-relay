@@ -1,0 +1,40 @@
+{
+  "name": "gini-relay",
+  "version": "0.3.0",
+  "description": "Self-hosted ngrok-style relay. The client is a Bun package (Google login + native frpc tunnel, no docker); the server brain runs beside frps via docker compose.",
+  "type": "module",
+  "private": true,
+  "module": "src/client/index.ts",
+  "main": "src/client/index.ts",
+  "types": "src/client/index.ts",
+  "bin": {
+    "frp": "src/client/bin.ts"
+  },
+  "exports": {
+    ".": {
+      "bun": "./src/client/index.ts",
+      "types": "./src/client/index.ts",
+      "import": "./src/client/index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/client",
+    "scripts/postinstall.ts",
+    "frps-ca.crt",
+    "README.md"
+  ],
+  "scripts": {
+    "brain": "bun src/server/bin.ts",
+    "frp": "bun src/client/bin.ts",
+    "frps": "docker compose up -d",
+    "test": "bun test",
+    "test:flow": "bun test/integration.ts",
+    "typecheck": "tsc --noEmit",
+    "postinstall": "bun run scripts/postinstall.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}

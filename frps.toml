@@ -1,0 +1,30 @@
+# frp server — production. TLS is terminated by Caddy in front; frps serves the
+# http vhost internally and routes by Host to the right frpc. No dashboard.
+bindPort = 7000
+
+# Tunnels are <subdomain>.gini-relay.lilaclabs.ai. Wildcard DNS must point here.
+vhostHTTPPort = 8080
+subDomainHost = "gini-relay.lilaclabs.ai"
+
+# Unconnected/unknown subdomains already return HTTP 404; this just replaces frp's
+# branded body with a plain "404 — not found" page (read per request).
+custom404Page = "/etc/frp/web/404.html"
+
+# Coarse gate: every frpc must present this shared token. Real per-user auth is
+# the per-device opaque session token, verified by the brain in the NewProxy plugin below.
+auth.method = "token"
+auth.token = "{{ .Envs.FRP_AUTH_TOKEN }}"
+
+# Control-plane TLS: frps presents a cert signed by our private CA. Clients pin
+# that CA (frps-ca.crt), so they refuse to talk to anything but the real relay.
+# force = accept only TLS connections (no plaintext downgrade).
+transport.tls.force = true
+transport.tls.certFile = "/etc/frp/tls/frps.crt"
+transport.tls.keyFile = "/etc/frp/tls/frps.key"
+
+# Identity + quota policy plugin — the brain, reachable over the compose network.
+[[httpPlugins]]
+name = "gini-auth"
+addr = "brain:9100"
+path = "/_frp/handler"
+ops = ["Login", "NewProxy"]

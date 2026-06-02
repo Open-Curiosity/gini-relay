@@ -1,0 +1,61 @@
+name: gini-relay
+
+# Production stack. Deployed by .github/workflows/deploy.yml (docker compose up
+# -d --build) on a self-hosted runner; secrets are injected from GitHub secrets
+# as env, never written to disk.
+#
+# Requires on the host: wildcard DNS *.gini-relay.lilaclabs.ai (and the apex)
+# pointed here, and the certbot wildcard cert under /etc/letsencrypt.
+services:
+  # The brain: identity (opaque device sessions), subdomain registry, frps policy plugin.
+  brain:
+    build: .
+    environment:
+      GINI_PLUGIN_PORT: "9100"
+      GINI_PUBLIC_URL: "https://gini-relay.lilaclabs.ai"
+      GINI_DB: "/data/relay.db"
+      GINI_GOOGLE_CLIENT_ID: "${GINI_GOOGLE_CLIENT_ID:-}"
+      GINI_GOOGLE_CLIENT_SECRET: "${GINI_GOOGLE_CLIENT_SECRET:-}"
+      GINI_ALLOW_STUB: "${GINI_ALLOW_STUB:-}"
+    volumes:
+      - relaydata:/data
+    networks: [gini]
+    restart: unless-stopped
+
+  # frp server: transport + Host routing. No dashboard. TLS terminates at Caddy.
+  frps:
+    image: fatedier/frps:v0.69.1
+    command: ["-c", "/etc/frp/frps.toml"]
+    environment:
+      FRP_AUTH_TOKEN: "${FRP_AUTH_TOKEN:?set it in .env}"
+    volumes:
+      - ./frps.toml:/etc/frp/frps.toml:ro
+      - ./frps-web:/etc/frp/web:ro   # plain 404 body (dir mount: content updates apply without a recreate)
+      - /opt/gini-relay/tls:/etc/frp/tls:ro   # CA-signed control-plane cert + key
+    ports:
+      - "7000:7000"   # frpc control plane (clients dial gini-relay.lilaclabs.ai:7000)
+    networks: [gini]
+    depends_on: [brain]
+    restart: unless-stopped
+
+  # Public TLS terminator: holds the wildcard cert, routes apex->brain, *->frps.
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro   # certbot wildcard cert (read-only)
+      - caddydata:/data
+    networks: [gini]
+    depends_on: [frps]
+    restart: unless-stopped
+
+networks:
+  gini:
+    name: gini-frpnet
+
+volumes:
+  relaydata:
+  caddydata:
