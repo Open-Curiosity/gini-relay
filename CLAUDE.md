@@ -212,7 +212,7 @@ for (const d of await listDevices(deps)) {
 
 // Revoke one device instantly (per-device): its token dies on the next check; others are untouched.
 // Re-login keeps the subdomain but mints a fresh session secret (an old leaked token can't be revived).
-await revokeDevice(deps, "g202f66005046d2144a9ab836319f0c0e");
+await revokeDevice(deps, "k7p2m9q4xn3rs8vbcd0fgh1jzy");
 ```
 
 Or via the CLI: `frp devices` lists them, `frp revoke <subdomain>` kills one device's session (then `frp login` mints a fresh secret), and `frp logout` revokes *this* device and clears the local session — other devices keep working.
@@ -232,7 +232,7 @@ Override any default via env (`GINI_RELAY_URL`, `GINI_FRPS_ADDR`, `GINI_FRP_TOKE
 ```
 Google sign-in ──▶ account = Google `sub` ──issues per device──▶ opaque session token (gsk_…, random)
 device   = client id at ~/.gini-relay/device.json                  │ brain stores ONLY sha256(token)
-subdomain = 128-bit CSPRNG in SQLite, keyed by (account, device_id) ┘ one per device, owned
+subdomain = 128-bit CSPRNG (Crockford Base32, 26 chars) keyed by (account, device_id) ┘ one per device
 ```
 
 The session token is a **random opaque secret**, not a JWT. At login the brain mints `gsk_<32 random bytes>`, hands the raw token to the client once, and persists **only `sha256(token)` hex** in that device's registry row — the raw secret can't be recovered from the DB. The **brain is the sole verifier** (stateful by design): every `Login`, `NewProxy`, `/devices`, and `/devices/:subdomain` check is a single registry hash-lookup (`verifyToken` → `WHERE token_hash=sha256(token) AND revoked=0`). There is **no offline verification and no public key** — and **no expiry**: a session lives until it's revoked, so one login serves 24/7 across reconnects (network blip, frps restart, machine sleep) with no re-login.

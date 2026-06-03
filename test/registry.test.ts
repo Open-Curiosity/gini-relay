@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { rmSync } from "node:fs";
-import { openDb, createRegistry, sha256hex } from "../src/server/registry.ts";
+import { openDb, createRegistry, sha256hex, crockford32 } from "../src/server/registry.ts";
 
 describe("sha256hex", () => {
   it("returns hex sha256 of the token", () => {
@@ -16,6 +16,25 @@ describe("sha256hex", () => {
     expect(sha256hex("abc")).toBe(
       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
     );
+  });
+});
+
+describe("crockford32", () => {
+  it("encodes known vectors (MSB-first, 5 bits/char, low bits zero-padded)", () => {
+    // 0xff = 11111111 -> 11111 | 111(00) -> index 31 then 28 = "z","w".
+    expect(crockford32(Buffer.from([0xff]))).toBe("zw");
+    // 0xff,0x00 = 11111111 00000000 -> 11111|11100|00000|0 -> z,w,0,0.
+    expect(crockford32(Buffer.from([0xff, 0x00]))).toBe("zw00");
+    // 16 zero bytes -> 26 zero chars.
+    expect(crockford32(Buffer.alloc(16, 0x00))).toBe("0".repeat(26));
+    // 16 0xff bytes -> 25 all-ones groups ("z") + final 111(00)=28 ("w").
+    expect(crockford32(Buffer.alloc(16, 0xff))).toBe("z".repeat(25) + "w");
+  });
+
+  it("maps 16 random bytes to a 26-char DNS-safe label with no ambiguous chars", () => {
+    const s = crockford32(Buffer.alloc(16, 0x9c));
+    expect(s).toHaveLength(26);
+    expect(s).toMatch(/^[0-9a-hjkmnp-tv-z]{26}$/); // excludes i, l, o, u
   });
 });
 
@@ -83,7 +102,8 @@ describe("createRegistry", () => {
     const reg = createRegistry(db, { rng: () => Buffer.alloc(16, 0xaa), nowMs });
     const { subdomain, token } = reg.createSession("a", "d1");
 
-    expect(subdomain).toBe("g" + "aa".repeat(16));
+    expect(subdomain).toBe(crockford32(Buffer.alloc(16, 0xaa)));
+    expect(subdomain).toMatch(/^[0-9a-hjkmnp-tv-z]{26}$/);
     expect(token).toMatch(/^gsk_[A-Za-z0-9_-]+$/);
 
     // The raw token is never stored — only its hash.
@@ -157,7 +177,7 @@ describe("createRegistry", () => {
     const fresh = Buffer.alloc(16, 0x22);
     const seedReg = createRegistry(db, { rng: () => taken, nowMs });
     seedReg.createSession("seed", "seeddev");
-    const takenSub = "g" + "11".repeat(16);
+    const takenSub = crockford32(taken);
 
     let call = 0;
     const reg = createRegistry(db, {
@@ -165,7 +185,7 @@ describe("createRegistry", () => {
       nowMs,
     });
     const { subdomain } = reg.createSession("a", "d1");
-    expect(subdomain).toBe("g" + "22".repeat(16));
+    expect(subdomain).toBe(crockford32(fresh));
     expect(subdomain).not.toBe(takenSub);
     expect(call).toBe(2);
   });
@@ -241,7 +261,7 @@ describe("createRegistry", () => {
   it("uses default rng and clock when not injected", () => {
     const reg = createRegistry(db);
     const { subdomain, token } = reg.createSession("a", "d1");
-    expect(subdomain).toMatch(/^g[0-9a-f]{32}$/);
+    expect(subdomain).toMatch(/^[0-9a-hjkmnp-tv-z]{26}$/);
     expect(reg.verifyToken(token)).toEqual({ account: "a", device_id: "d1", subdomain });
     const rows = reg.listDevices("a");
     expect(rows[0]!.created_at).toBeGreaterThan(0);

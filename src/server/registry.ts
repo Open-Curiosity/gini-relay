@@ -42,6 +42,33 @@ export function sha256hex(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+// Lowercase Crockford Base32 alphabet: digits 0-9 plus 22 letters with the
+// visually ambiguous I, L, O, U removed. DNS labels are case-insensitive, so we
+// emit lowercase. https://www.crockford.com/base32.html
+const CROCKFORD = "0123456789abcdefghjkmnpqrstvwxyz";
+
+/**
+ * Encodes bytes as a Crockford Base32 string (5 bits per character, MSB-first).
+ * 16 random bytes (128 bits) → 26 characters: the unguessable subdomain. The
+ * final character carries the last 3 bits left-aligned (2 zero-padding bits).
+ */
+export function crockford32(bytes: Buffer): string {
+  let value = 0;
+  let bits = 0;
+  let out = "";
+  for (const b of bytes) {
+    value = ((value << 8) | b) >>> 0;
+    bits += 8;
+    while (bits >= 5) {
+      bits -= 5;
+      out += CROCKFORD[(value >>> bits) & 31];
+    }
+    value &= (1 << bits) - 1;
+  }
+  if (bits > 0) out += CROCKFORD[(value << (5 - bits)) & 31];
+  return out;
+}
+
 /** Opens (creating if needed) the registry database with its schema applied. */
 export function openDb(path: string): Database {
   const db = new Database(path, { create: true });
@@ -96,7 +123,7 @@ export function createRegistry(db: Database, opts: RegistryOptions = {}): Regist
       const createdAt = now();
       let subdomain = "";
       for (let i = 0; i < 5; i++) {
-        subdomain = "g" + rng().toString("hex");
+        subdomain = crockford32(rng());
         if (!db.query("SELECT 1 FROM devices WHERE subdomain=$s").get({ $s: subdomain })) break;
       }
       const rec = { subdomain, account, device_id: deviceId, created_at: createdAt, token_hash: hash, revoked: false };
