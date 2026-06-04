@@ -41,7 +41,7 @@ export const startLoopback: StartLoopback = (ports, state) => {
             return html("<h2>Login failed.</h2><p>Return to your terminal and try again.</p>");
           }
           resolve(code);
-          return html("<h2>Logged in.</h2><p>You can close this tab and return to your terminal.</p>");
+          return html("<h2>Logged in to Gini Relay.</h2><p>You can close this tab.</p>");
         },
       });
       redirectUri = `http://127.0.0.1:${p}/cb`;
