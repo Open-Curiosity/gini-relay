@@ -4,6 +4,7 @@
  * `Request` objects in tests; the thin bin entry wires real deps and serves it.
  *
  * Routes:
+ *   GET    /.well-known/apple-app-site-association   Apple universal-link assoc (served at the apex)
  *   GET    /auth/google-url      Google consent URL for a loopback redirect
  *   POST   /auth/exchange        code (+PKCE) -> { token, subdomain, account }
  *   GET    /devices              list the caller's devices (Bearer token)
@@ -20,18 +21,53 @@ export interface AppDeps {
   authUrl: (redirectUri: string, state: string, codeChallenge: string) => string;
   exchange: (code: string, redirectUri: string, codeVerifier: string) => Promise<{ account: string; email: string | null }>;
   log?: (msg: string) => void;
+  /**
+   * App ID (`TeamID.bundleID`) published in the Apple App Site Association file.
+   * iOS validates a wildcard associated domain (`applinks:*.<relay>`) by fetching
+   * the AASA from the wildcard's ROOT — the apex — via Apple's CDN, not from the
+   * per-device tunnel subdomain. The apex routes here (Caddy: apex -> brain), so
+   * the brain must serve it or universal links into tunneled subdomains never
+   * validate and scanned links fall back to Safari. Defaults to the Gini mobile
+   * app; override via GINI_IOS_APP_ID at the bin entry.
+   */
+  iosAppId?: string;
 }
 
 const J = (o: unknown, status = 200): Response => Response.json(o as never, { status });
 const bearer = (req: Request): string => (req.headers.get("authorization") ?? "").replace(/^Bearer /, "");
 
+const DEFAULT_IOS_APP_ID = "WB6Y3K67AB.ai.lilaclabs.gini.mobile";
+
+/** Apple App Site Association body authorizing the app on every relay subdomain. */
+function appleAppSiteAssociation(appId: string): unknown {
+  return {
+    applinks: {
+      details: [
+        { appIDs: [appId], components: [{ "/": "/" }, { "/": "/pair" }, { "/": "/pair/*" }] },
+      ],
+    },
+  };
+}
+
 export function createApp(deps: AppDeps): (req: Request) => Promise<Response> {
   const log = deps.log ?? (() => {});
   const { registry } = deps;
+  const iosAppId = deps.iosAppId ?? DEFAULT_IOS_APP_ID;
 
   return async function fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
     const path = url.pathname;
+
+    // ── Apple universal links: serve the AASA at the apex ────────────────
+    // The wildcard associated domain (applinks:*.<relay>) is validated by iOS
+    // fetching this file from the apex via Apple's CDN; the per-subdomain copy
+    // the gateway serves is never consulted for a wildcard.
+    if (path === "/.well-known/apple-app-site-association" && req.method === "GET") {
+      return new Response(JSON.stringify(appleAppSiteAssociation(iosAppId)), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
 
     // ── login: Google consent URL for a loopback redirect ───────────────
     if (path === "/auth/google-url" && req.method === "GET") {

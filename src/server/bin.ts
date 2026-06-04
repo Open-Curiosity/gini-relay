@@ -38,6 +38,7 @@ const app = createApp({
   exchange: (code, redirectUri, codeVerifier) =>
     exchangeGoogleCode({ clientId: cfg.googleId, clientSecret: cfg.googleSecret }, code, redirectUri, codeVerifier),
   log: (msg) => console.log(msg),
+  iosAppId: process.env.GINI_IOS_APP_ID || undefined,
 });
 
 Bun.serve({

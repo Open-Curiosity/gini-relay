@@ -312,6 +312,24 @@ describe("/_frp/handler", () => {
   });
 });
 
+describe("/.well-known/apple-app-site-association", () => {
+  it("200 serves the AASA with the default app ID and a JSON content-type", async () => {
+    const app = createApp(makeDeps());
+    const r = await get(app, "/.well-known/apple-app-site-association");
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toBe("application/json");
+    const j = (await r.json()) as any;
+    expect(j.applinks.details[0].appIDs).toEqual(["WB6Y3K67AB.ai.lilaclabs.gini.mobile"]);
+    expect(j.applinks.details[0].components.map((c: any) => c["/"])).toEqual(["/", "/pair", "/pair/*"]);
+  });
+
+  it("honors an app ID overridden via deps", async () => {
+    const app = createApp(makeDeps({ iosAppId: "TEAMID.com.example.app" }));
+    const r = await get(app, "/.well-known/apple-app-site-association");
+    expect(((await r.json()) as any).applinks.details[0].appIDs).toEqual(["TEAMID.com.example.app"]);
+  });
+});
+
 describe("defaults", () => {
   it("404 not found", async () => {
     const app = createApp(makeDeps());
