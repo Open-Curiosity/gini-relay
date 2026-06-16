@@ -492,6 +492,136 @@ describe("Frpc.exited getter / stop", () => {
     await frpc.stop("SIGKILL");
     expect(killed.signal).toBe("SIGKILL");
   });
+
+  // A process whose `exited` only resolves when the test calls resolveExit, and
+  // whose kill() records every signal WITHOUT resolving exited — so it models a
+  // child that ignores SIGTERM. resolveExit lets the test settle it on demand
+  // (e.g. once the SIGKILL "lands").
+  function ignoresSigtermProc(): {
+    proc: SpawnedProcess;
+    signals: (number | NodeJS.Signals | undefined)[];
+    resolveExit: (code: number) => void;
+  } {
+    const signals: (number | NodeJS.Signals | undefined)[] = [];
+    let resolveExit!: (code: number) => void;
+    const exited = new Promise<number>((res) => {
+      resolveExit = res;
+    });
+    const proc: SpawnedProcess = {
+      pid: 99,
+      stdout: streamOf(["login to server success"]),
+      stderr: null,
+      exited,
+      kill: (signal) => {
+        signals.push(signal);
+      },
+    };
+    return { proc, signals, resolveExit };
+  }
+
+  it("stop() escalates to SIGKILL when the child ignores the graceful signal", async () => {
+    const { proc, signals, resolveExit } = ignoresSigtermProc();
+    const frpc = new Frpc({
+      configPath: "/c.json",
+      resolveBinaryFn: async () => "/bin/frpc",
+      spawnFn: () => proc,
+      killEscalationMs: 5,
+    });
+    await frpc.start();
+    const stopped = frpc.stop();
+    // Poll for the escalation rather than sleeping a fixed time.
+    for (let i = 0; i < 600 && !signals.includes(9); i += 1) await Bun.sleep(2);
+    expect(signals).toEqual(["SIGTERM", 9]);
+    // The SIGKILL "takes": resolve exited so stop() settles with the code.
+    resolveExit(137);
+    expect(await stopped).toBe(137);
+  });
+
+  it("stop() does not stack a second escalation timer when called twice", async () => {
+    const { proc, signals, resolveExit } = ignoresSigtermProc();
+    const frpc = new Frpc({
+      configPath: "/c.json",
+      resolveBinaryFn: async () => "/bin/frpc",
+      spawnFn: () => proc,
+      killEscalationMs: 5,
+    });
+    await frpc.start();
+    const first = frpc.stop();
+    const second = frpc.stop(); // re-sends the graceful signal, no new timer
+    // Two graceful signals (one per call), then exactly ONE SIGKILL from the
+    // single escalation timer.
+    for (let i = 0; i < 600 && !signals.includes(9); i += 1) await Bun.sleep(2);
+    // Give any erroneously-stacked second timer the same window to also fire.
+    await Bun.sleep(20);
+    expect(signals.filter((s) => s === 9)).toHaveLength(1);
+    expect(signals.filter((s) => s === "SIGTERM")).toHaveLength(2);
+    resolveExit(0);
+    await Promise.all([first, second]);
+  });
+
+  it("stop() clears the escalation timer when the process exits before the delay", async () => {
+    const { proc, signals, resolveExit } = ignoresSigtermProc();
+    const frpc = new Frpc({
+      configPath: "/c.json",
+      resolveBinaryFn: async () => "/bin/frpc",
+      spawnFn: () => proc,
+      killEscalationMs: 10_000, // long: the exit must clear it well before it fires
+    });
+    await frpc.start();
+    const stopped = frpc.stop();
+    resolveExit(0); // graceful exit beats the escalation window
+    expect(await stopped).toBe(0);
+    // Give the (now-cleared) timer ample time to fire if it leaked — it must not.
+    await Bun.sleep(30);
+    expect(signals).toEqual(["SIGTERM"]); // no SIGKILL ever sent
+  });
+
+  it("stop() falls back to the FRPC_KILL_ESCALATION_MS env when no option is set", async () => {
+    const prev = process.env.FRPC_KILL_ESCALATION_MS;
+    process.env.FRPC_KILL_ESCALATION_MS = "5";
+    try {
+      const { proc, signals, resolveExit } = ignoresSigtermProc();
+      const frpc = new Frpc({
+        configPath: "/c.json",
+        resolveBinaryFn: async () => "/bin/frpc",
+        spawnFn: () => proc,
+      });
+      await frpc.start();
+      const stopped = frpc.stop();
+      for (let i = 0; i < 600 && !signals.includes(9); i += 1) await Bun.sleep(2);
+      expect(signals).toEqual(["SIGTERM", 9]);
+      resolveExit(137);
+      expect(await stopped).toBe(137);
+    } finally {
+      if (prev === undefined) delete process.env.FRPC_KILL_ESCALATION_MS;
+      else process.env.FRPC_KILL_ESCALATION_MS = prev;
+    }
+  });
+
+  it("stop() uses the 2s default when FRPC_KILL_ESCALATION_MS is invalid", async () => {
+    const prev = process.env.FRPC_KILL_ESCALATION_MS;
+    process.env.FRPC_KILL_ESCALATION_MS = "not-a-number"; // hits the !isFinite default branch
+    try {
+      const { proc, signals, resolveExit } = ignoresSigtermProc();
+      const frpc = new Frpc({
+        configPath: "/c.json",
+        resolveBinaryFn: async () => "/bin/frpc",
+        spawnFn: () => proc,
+      });
+      await frpc.start();
+      const stopped = frpc.stop();
+      // The default is 2000ms — far longer than this test should wait. Resolve
+      // the exit immediately so the (created, unref'd) default timer is cleared
+      // before it fires; we only need to prove the default-path code ran.
+      resolveExit(0);
+      expect(await stopped).toBe(0);
+      await Bun.sleep(20);
+      expect(signals).toEqual(["SIGTERM"]); // 2s SIGKILL never fired
+    } finally {
+      if (prev === undefined) delete process.env.FRPC_KILL_ESCALATION_MS;
+      else process.env.FRPC_KILL_ESCALATION_MS = prev;
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

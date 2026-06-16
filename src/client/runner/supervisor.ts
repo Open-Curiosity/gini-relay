@@ -58,6 +58,11 @@ export interface FrpcOptions {
   ensure?: EnsureBinaryOptions;
   tmpDir?: string;
   readyTimeoutMs?: number;
+  /**
+   * How long stop() waits after the first (graceful) signal before escalating
+   * to SIGKILL. Overrides the FRPC_KILL_ESCALATION_MS env; defaults to 2000ms.
+   */
+  killEscalationMs?: number;
   /** Predicate for "ready". Defaults to login-or-proxy; gini pins it to proxy-up. */
   readyWhen?: (line: string) => boolean;
 
@@ -74,6 +79,16 @@ const defaultWriteConfig = async (path: string, content: string): Promise<void> 
   writeFileSync(path, content, { mode: 0o600 });
 };
 
+// How long stop() waits after the first (graceful) signal before escalating to
+// SIGKILL. Read at call time so tests can tighten it. Defaults to 2s. A frpc
+// that traps/ignores SIGTERM (or a reparented child whose control connection is
+// wedged) would otherwise leave stop()'s promise pending forever and orphan the
+// process on shutdown.
+function killEscalationMs(): number {
+  const v = Number(process.env.FRPC_KILL_ESCALATION_MS);
+  return Number.isFinite(v) && v > 0 ? v : 2_000;
+}
+
 export class Frpc extends EventEmitter<FrpcEvents> {
   private readonly options: FrpcOptions;
   private process: SpawnedProcess | null = null;
@@ -81,6 +96,7 @@ export class Frpc extends EventEmitter<FrpcEvents> {
   private ready = false;
   private configFilePath: string | null = null;
   private ownsConfig = false;
+  private killTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(options: FrpcOptions = {}) {
     super();
@@ -231,10 +247,34 @@ export class Frpc extends EventEmitter<FrpcEvents> {
     return path;
   }
 
+  // Stop the child. Sends `signal` (default SIGTERM) and, if the child hasn't
+  // exited within the escalation window, force-kills it with SIGKILL — so a frpc
+  // that traps/ignores the graceful signal can't leave this promise pending
+  // forever (which would orphan the child and stall a caller's shutdown drain).
+  // Resolves the child's exit code. A repeat stop() re-sends the signal but does
+  // not stack a second escalation timer.
   async stop(signal: NodeJS.Signals = "SIGTERM"): Promise<number> {
     if (!this.process) throw new Error("frpc: not started");
-    this.process.kill(signal);
-    return this.process.exited;
+    // Capture the process locally so the escalation timer never targets a
+    // different/reassigned process if `this.process` changes.
+    const proc = this.process;
+    proc.kill(signal);
+    if (this.killTimer === undefined) {
+      const delay = this.options.killEscalationMs ?? killEscalationMs();
+      this.killTimer = setTimeout(() => proc.kill(9), delay);
+      // Don't keep the event loop alive just to force-kill (mirrors the
+      // readiness timer in start()).
+      this.killTimer.unref();
+      // The moment the process exits (graceful or after the SIGKILL), clear the
+      // timer so a force-kill never fires at a dead — possibly pid-reused —
+      // process. Clear on both settle paths so a rejected `exited` can't leak it.
+      const clear = (): void => {
+        clearTimeout(this.killTimer);
+        this.killTimer = undefined;
+      };
+      void proc.exited.then(clear, clear);
+    }
+    return proc.exited;
   }
 }
 
