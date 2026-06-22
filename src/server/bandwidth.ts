@@ -3,11 +3,11 @@
  * uses to vet what a client declares in NewProxy.
  */
 
-/** Per-device cap as frp's string form. 1220*1024*8 = 9.994 Mbit/s (under 10). */
-export const BANDWIDTH = "1220KB";
+/** Per-device cap as frp's string form. 10*1024*1024 = 10 MiB/s = 83.886 Mbit/s. */
+export const BANDWIDTH = "10MB";
 
 /** The cap in bytes/s; a declared limit must parse to <= this. */
-export const CAP_BYTES = 1220 * 1024;
+export const CAP_BYTES = 10 * 1024 * 1024;
 
 /** Only http subdomain tunnels are supported (TLS terminates at Caddy). */
 export const SUPPORTED_PROXY = new Set(["http"]);

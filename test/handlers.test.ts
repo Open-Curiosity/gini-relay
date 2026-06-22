@@ -275,7 +275,7 @@ describe("/_frp/handler", () => {
 
   it("NewProxy REJECT bandwidth over cap", async () => {
     const { app, token, subdomain } = newProxyApp();
-    const r = await frp(app, "NewProxy", base(token, subdomain, { bandwidth_limit: "5MB" }));
+    const r = await frp(app, "NewProxy", base(token, subdomain, { bandwidth_limit: "50MB" }));
     expect(((await r.json()) as any).reject_reason).toContain("bandwidth");
   });
 

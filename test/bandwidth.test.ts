@@ -3,12 +3,12 @@ import { BANDWIDTH, CAP_BYTES, SUPPORTED_PROXY, parseBw } from "../src/server/ba
 
 describe("bandwidth constants", () => {
   it("BANDWIDTH is the frp string form", () => {
-    expect(BANDWIDTH).toBe("1220KB");
+    expect(BANDWIDTH).toBe("10MB");
   });
 
-  it("CAP_BYTES is 1220*1024", () => {
-    expect(CAP_BYTES).toBe(1220 * 1024);
-    expect(CAP_BYTES).toBe(1249280);
+  it("CAP_BYTES is 10*1024*1024", () => {
+    expect(CAP_BYTES).toBe(10 * 1024 * 1024);
+    expect(CAP_BYTES).toBe(10485760);
   });
 
   it("SUPPORTED_PROXY has http and not tcp", () => {

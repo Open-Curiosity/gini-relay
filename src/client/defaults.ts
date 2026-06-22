@@ -40,7 +40,7 @@ export const DEFAULTS: RelayDefaults = {
   frpToken: "AAFwwApadkEUoKj9jQ9P6wP1jzYY0zTe",
   caFile: join(PACKAGE_ROOT, "frps-ca.crt"),
   loopbackPorts: [8765, 8766, 8767],
-  bandwidth: "1220KB",
+  bandwidth: "10MB",
 };
 
 /** Resolves defaults, applying any GINI_* environment overrides. */

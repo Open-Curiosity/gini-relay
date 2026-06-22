@@ -26,7 +26,7 @@ describe("server barrel (internal, not exported by the package)", () => {
   });
 
   it("exports the bandwidth constants", () => {
-    expect(server.CAP_BYTES).toBe(1220 * 1024);
+    expect(server.CAP_BYTES).toBe(10 * 1024 * 1024);
     expect(server.SUPPORTED_PROXY.has("http")).toBe(true);
   });
 });
