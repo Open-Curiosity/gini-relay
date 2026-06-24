@@ -13,6 +13,13 @@ export interface Session {
   token: string;
   subdomain: string;
   account?: string;
+  /**
+   * Google refresh token from an offline (Workspace-scoped) login, present only
+   * when the login requested Workspace services. Bound to the relay's OAuth
+   * client, so a consumer pairs it with that client's id/secret to mint access
+   * tokens. Absent for an identity-only login.
+   */
+  refreshToken?: string;
 }
 
 export interface Store {

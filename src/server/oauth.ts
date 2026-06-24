@@ -94,7 +94,7 @@ export async function exchangeGoogleCode(
   code: string,
   redirectUri: string,
   codeVerifier: string,
-): Promise<{ account: string; email: string | null }> {
+): Promise<{ account: string; email: string | null; refreshToken: string | null }> {
   const fetchFn = deps.fetchFn ?? fetch;
   const now = deps.nowMs ?? Date.now;
   const body = new URLSearchParams({
@@ -111,12 +111,19 @@ export async function exchangeGoogleCode(
     body: body.toString(),
   });
   if (!res.ok) throw new Error(`google token exchange failed: ${res.status} ${await res.text()}`);
-  const json = (await res.json()) as { id_token?: string };
+  // A refresh_token is present only when the consent was offline (i.e. the login
+  // requested Workspace scopes); an identity-only login omits it. Capture it so
+  // the caller can hand it to a Workspace tool — the relay itself never stores it.
+  const json = (await res.json()) as { id_token?: string; refresh_token?: string };
   if (typeof json.id_token !== "string") throw new Error("google response missing id_token");
   const claims = decodeJwtClaims(json.id_token);
   if (claims.aud !== deps.clientId) throw new Error("id_token aud mismatch");
   if (claims.iss !== "https://accounts.google.com" && claims.iss !== "accounts.google.com") throw new Error("id_token iss mismatch");
   if (typeof claims.exp !== "number" || claims.exp * 1000 <= now()) throw new Error("id_token expired");
   if (typeof claims.sub !== "string" || claims.sub === "") throw new Error("id_token missing sub");
-  return { account: claims.sub, email: typeof claims.email === "string" ? claims.email : null };
+  return {
+    account: claims.sub,
+    email: typeof claims.email === "string" ? claims.email : null,
+    refreshToken: typeof json.refresh_token === "string" && json.refresh_token.length > 0 ? json.refresh_token : null,
+  };
 }

@@ -19,7 +19,7 @@ export interface AppDeps {
   registry: Registry;
   googleLive: boolean;
   authUrl: (redirectUri: string, state: string, codeChallenge: string, services: string[]) => string;
-  exchange: (code: string, redirectUri: string, codeVerifier: string) => Promise<{ account: string; email: string | null }>;
+  exchange: (code: string, redirectUri: string, codeVerifier: string) => Promise<{ account: string; email: string | null; refreshToken: string | null }>;
   log?: (msg: string) => void;
   /**
    * App ID (`TeamID.bundleID`) published in the Apple App Site Association file.
@@ -97,6 +97,9 @@ export function createApp(deps: AppDeps): (req: Request) => Promise<Response> {
       const deviceId = typeof b.device_id === "string" && b.device_id && b.device_id.length <= 256 ? b.device_id : "";
       if (!deviceId) return J({ error: "device_id required" }, 400);
       let account: string;
+      // Present only for an offline (Workspace-scoped) consent; returned to the
+      // client so it can drive a Workspace tool. The relay does NOT persist it.
+      let refreshToken: string | null = null;
       if (deps.googleLive) {
         const code = typeof b.code === "string" ? b.code : "";
         const redirect_uri = typeof b.redirect_uri === "string" ? b.redirect_uri : "";
@@ -105,7 +108,9 @@ export function createApp(deps: AppDeps): (req: Request) => Promise<Response> {
         if (!code_verifier) return J({ error: "code_verifier required" }, 400);
         if (!LOOPBACK_REDIRECTS.has(redirect_uri)) return J({ error: "bad redirect_uri" }, 400);
         try {
-          account = (await deps.exchange(code, redirect_uri, code_verifier)).account;
+          const result = await deps.exchange(code, redirect_uri, code_verifier);
+          account = result.account;
+          refreshToken = result.refreshToken;
         } catch (e) {
           return J({ error: `exchange failed: ${(e as Error).message}` }, 400);
         }
@@ -114,7 +119,9 @@ export function createApp(deps: AppDeps): (req: Request) => Promise<Response> {
       }
       const { subdomain, token } = registry.createSession(account, deviceId);
       log(`[auth] ${account} (device ${deviceId}) -> ${subdomain}`);
-      return J({ token, subdomain, account });
+      // Only include refresh_token when one was issued, so an identity-only
+      // login's response is unchanged.
+      return J(refreshToken ? { token, subdomain, account, refresh_token: refreshToken } : { token, subdomain, account });
     }
 
     // ── device management ────────────────────────────────────────────────

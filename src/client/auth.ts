@@ -127,10 +127,25 @@ export async function loginUrl(deps: LoginUrlDeps): Promise<LoginHandle> {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ code, redirect_uri: lb.redirectUri, device_id, code_verifier: verifier }),
         });
-        const s = (await res.json()) as { token?: string; subdomain?: string; account?: string; error?: string };
+        const s = (await res.json()) as {
+          token?: string;
+          subdomain?: string;
+          account?: string;
+          refresh_token?: string;
+          error?: string;
+        };
         if (!res.ok || !s.token || !s.subdomain) throw new Error(`login failed: ${s.error ?? res.status}`);
         if (cancelled) throw new Error("login was not completed");
-        const session: Session = { token: s.token, subdomain: s.subdomain, account: s.account };
+        // refresh_token rides along only for an offline (Workspace) login; omit
+        // the field entirely otherwise so an identity-only session is unchanged.
+        const session: Session = {
+          token: s.token,
+          subdomain: s.subdomain,
+          account: s.account,
+          ...(typeof s.refresh_token === "string" && s.refresh_token.length > 0
+            ? { refreshToken: s.refresh_token }
+            : {}),
+        };
         deps.store.writeSession(session);
         return session;
       };

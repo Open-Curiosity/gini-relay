@@ -14,7 +14,7 @@ function makeDeps(over: Partial<AppDeps> = {}): AppDeps {
     registry: makeRegistry(),
     googleLive: false,
     authUrl: (r) => "url:" + r,
-    exchange: async () => ({ account: "acct", email: null }),
+    exchange: async () => ({ account: "acct", email: null, refreshToken: null }),
     log: () => {},
     ...over,
   };
@@ -143,7 +143,7 @@ describe("/auth/exchange", () => {
     const app = createApp(makeDeps({
       registry,
       googleLive: true,
-      exchange: async () => ({ account: "googsub", email: "e@x" }),
+      exchange: async () => ({ account: "googsub", email: "e@x", refreshToken: null }),
     }));
     const r = await post(app, "/auth/exchange", { device_id: "d1", code: "abc", code_verifier: "v", redirect_uri: REDIRECT });
     expect(r.status).toBe(200);
@@ -151,10 +151,23 @@ describe("/auth/exchange", () => {
     expect(j.account).toBe("googsub");
     expect(typeof j.subdomain).toBe("string");
     expect(typeof j.token).toBe("string");
+    // An identity-only exchange has no refresh token, so the field is omitted.
+    expect("refresh_token" in j).toBe(false);
     const id = registry.verifyToken(j.token);
     expect(id).not.toBeNull();
     expect(id!.account).toBe("googsub");
     expect(id!.subdomain).toBe(j.subdomain);
+  });
+
+  it("live: includes refresh_token in the response when the exchange returns one", async () => {
+    const app = createApp(makeDeps({
+      googleLive: true,
+      exchange: async () => ({ account: "googsub", email: "e@x", refreshToken: "rt-123" }),
+    }));
+    const r = await post(app, "/auth/exchange", { device_id: "d1", code: "abc", code_verifier: "v", redirect_uri: REDIRECT });
+    expect(r.status).toBe(200);
+    const j = (await r.json()) as any;
+    expect(j.refresh_token).toBe("rt-123");
   });
 
   it("stub: 200 default account when none provided; token verifies", async () => {
@@ -376,7 +389,7 @@ describe("defaults", () => {
       registry,
       googleLive: false,
       authUrl: (r) => "url:" + r,
-      exchange: async () => ({ account: "a", email: null }),
+      exchange: async () => ({ account: "a", email: null, refreshToken: null }),
     });
     const r = await post(app, "/auth/exchange", { device_id: "d1", account: "x" });
     expect(r.status).toBe(200);

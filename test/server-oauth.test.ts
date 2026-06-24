@@ -150,7 +150,35 @@ describe("exchangeGoogleCode", () => {
       REDIRECT,
       "verifier",
     );
-    expect(out).toEqual({ account: "user-sub-1", email: "a@b.com" });
+    expect(out).toEqual({ account: "user-sub-1", email: "a@b.com", refreshToken: null });
+  });
+
+  it("returns the refresh token when Google includes one (offline consent)", async () => {
+    const idToken = makeIdToken({
+      aud: CLIENT_ID,
+      iss: "https://accounts.google.com",
+      exp: FUTURE,
+      sub: "user-sub-rt",
+      email: "rt@b.com",
+    });
+    const out = await exchangeGoogleCode(
+      deps(fakeFetch({ json: { id_token: idToken, refresh_token: "rt-xyz" } }), fixedNow),
+      "code",
+      REDIRECT,
+      "verifier",
+    );
+    expect(out).toEqual({ account: "user-sub-rt", email: "rt@b.com", refreshToken: "rt-xyz" });
+  });
+
+  it("treats an empty-string refresh_token as none", async () => {
+    const idToken = makeIdToken({ aud: CLIENT_ID, iss: "accounts.google.com", exp: FUTURE, sub: "s-empty" });
+    const out = await exchangeGoogleCode(
+      deps(fakeFetch({ json: { id_token: idToken, refresh_token: "" } }), fixedNow),
+      "c",
+      REDIRECT,
+      "v",
+    );
+    expect(out.refreshToken).toBeNull();
   });
 
   it("returns null email when email missing", async () => {
@@ -166,7 +194,7 @@ describe("exchangeGoogleCode", () => {
       REDIRECT,
       "verifier",
     );
-    expect(out).toEqual({ account: "user-sub-2", email: null });
+    expect(out).toEqual({ account: "user-sub-2", email: null, refreshToken: null });
   });
 
   it("accepts both iss values", async () => {
