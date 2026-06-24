@@ -5,6 +5,7 @@ import {
   LOOPBACK_PORTS,
   LOOPBACK_REDIRECTS,
   googleAuthUrl,
+  scopesForServices,
   exchangeGoogleCode,
   decodeJwtClaims,
 } from "../src/server/oauth.ts";
@@ -79,6 +80,51 @@ describe("googleAuthUrl", () => {
     expect(u.searchParams.get("prompt")).toBe("select_account");
     expect(u.searchParams.get("code_challenge")).toBe("chal-abc");
     expect(u.searchParams.get("code_challenge_method")).toBe("S256");
+  });
+
+  it("identity-only when services is the default empty list", () => {
+    // Omitting the arg must reproduce the exact prior request (online + select_account).
+    const u = new URL(googleAuthUrl(CLIENT_ID, REDIRECT, "s", "c"));
+    expect(u.searchParams.get("scope")).toBe("openid email profile");
+    expect(u.searchParams.get("access_type")).toBe("online");
+    expect(u.searchParams.get("prompt")).toBe("select_account");
+  });
+
+  it("appends workspace scopes and switches to offline+consent when services are requested", () => {
+    const u = new URL(googleAuthUrl(CLIENT_ID, REDIRECT, "s", "c", ["calendar", "gmail"]));
+    expect(u.searchParams.get("scope")).toBe(
+      "openid email profile https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.modify",
+    );
+    expect(u.searchParams.get("access_type")).toBe("offline");
+    expect(u.searchParams.get("prompt")).toBe("consent");
+  });
+
+  it("drops unknown service names and stays identity-only when none resolve", () => {
+    // An all-unknown list resolves to zero extra scopes, so the request must NOT
+    // flip to offline/consent — it stays a plain identity login.
+    const u = new URL(googleAuthUrl(CLIENT_ID, REDIRECT, "s", "c", ["bogus"]));
+    expect(u.searchParams.get("scope")).toBe("openid email profile");
+    expect(u.searchParams.get("access_type")).toBe("online");
+    expect(u.searchParams.get("prompt")).toBe("select_account");
+  });
+});
+
+describe("scopesForServices", () => {
+  it("maps known services to their scope URLs in order", () => {
+    expect(scopesForServices(["calendar", "gmail"])).toEqual([
+      "https://www.googleapis.com/auth/calendar",
+      "https://www.googleapis.com/auth/gmail.modify",
+    ]);
+  });
+
+  it("drops unknown names and de-duplicates repeats", () => {
+    expect(scopesForServices(["calendar", "nope", "calendar"])).toEqual([
+      "https://www.googleapis.com/auth/calendar",
+    ]);
+  });
+
+  it("returns an empty list for no services", () => {
+    expect(scopesForServices([])).toEqual([]);
   });
 });
 

@@ -34,7 +34,7 @@ const registry = createRegistry(openDb(cfg.dbPath));
 const app = createApp({
   registry,
   googleLive: cfg.googleLive,
-  authUrl: (redirectUri, state, codeChallenge) => googleAuthUrl(cfg.googleId, redirectUri, state, codeChallenge),
+  authUrl: (redirectUri, state, codeChallenge, services) => googleAuthUrl(cfg.googleId, redirectUri, state, codeChallenge, services),
   exchange: (code, redirectUri, codeVerifier) =>
     exchangeGoogleCode({ clientId: cfg.googleId, clientSecret: cfg.googleSecret }, code, redirectUri, codeVerifier),
   log: (msg) => console.log(msg),

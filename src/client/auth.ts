@@ -21,6 +21,13 @@ export interface LoginUrlDeps {
   store: Store;
   relayUrl: string;
   loopbackPorts: number[];
+  /**
+   * Optional Workspace service names (e.g. ["calendar", "gmail"]) to request
+   * extra scopes for. Forwarded to the relay's /auth/google-url, which validates
+   * them against its own allowlist. Omitted/empty -> an identity-only login,
+   * byte-for-byte the prior behavior, so existing callers are unaffected.
+   */
+  services?: string[];
   fetchFn?: typeof fetch;
   startLoopback?: StartLoopback;
   makePkce?: () => Pkce;
@@ -66,10 +73,17 @@ export async function loginUrl(deps: LoginUrlDeps): Promise<LoginHandle> {
     throw new Error(`no free loopback port among ${deps.loopbackPorts.join(", ")} — close whatever's using them and retry`);
   }
 
+  // Only append `services` when the caller requested some, so the identity-only
+  // request URL is unchanged (and existing relays that ignore the param are fine).
+  const servicesParam =
+    deps.services && deps.services.length > 0
+      ? `&services=${encodeURIComponent(deps.services.join(","))}`
+      : "";
+
   let url: string;
   try {
     const urlRes = await fetchFn(
-      `${deps.relayUrl}/auth/google-url?redirect_uri=${encodeURIComponent(lb.redirectUri)}&state=${state}&code_challenge=${challenge}`,
+      `${deps.relayUrl}/auth/google-url?redirect_uri=${encodeURIComponent(lb.redirectUri)}&state=${state}&code_challenge=${challenge}${servicesParam}`,
     );
     if (!urlRes.ok) {
       throw new Error(`relay error getting login URL: ${urlRes.status} ${await urlRes.text()}`);

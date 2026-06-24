@@ -75,6 +75,26 @@ describe("loginUrl", () => {
     expect(typeof handle.cancel).toBe("function");
   });
 
+  it("forwards requested services as a query param on the url request", async () => {
+    let requested = "";
+    const fetchFn = mock(async (input: string) => {
+      requested = input;
+      return mkResponse(URL_OK);
+    }) as unknown as typeof fetch;
+    await loginUrl(urlDeps({ fetchFn, services: ["calendar", "gmail"] }));
+    expect(requested).toContain(`&services=${encodeURIComponent("calendar,gmail")}`);
+  });
+
+  it("omits the services param entirely when none are requested", async () => {
+    let requested = "";
+    const fetchFn = mock(async (input: string) => {
+      requested = input;
+      return mkResponse(URL_OK);
+    }) as unknown as typeof fetch;
+    await loginUrl(urlDeps({ fetchFn })); // no services
+    expect(requested).not.toContain("services=");
+  });
+
   it("throws when no loopback port is free", async () => {
     await expect(loginUrl(urlDeps({ loopback: null }))).rejects.toThrow(/no free loopback port/);
   });

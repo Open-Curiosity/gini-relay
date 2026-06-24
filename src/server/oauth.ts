@@ -12,6 +12,30 @@ export const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 export const LOOPBACK_PORTS = [8765, 8766, 8767];
 export const LOOPBACK_REDIRECTS = new Set(LOOPBACK_PORTS.map((p) => `http://127.0.0.1:${p}/cb`));
 
+// Workspace service shorthand -> the Google OAuth scope(s) that service needs.
+// The base login is identity-only (openid email profile); a caller can request
+// extra Workspace surfaces by name and the consent URL adds their scopes. The
+// relay's Google app must be VERIFIED for any scope listed here (gmail.modify is
+// a restricted scope), so this map doubles as the relay's allowlist of grantable
+// services — a service not present here contributes nothing.
+export const SERVICE_SCOPES: Record<string, string[]> = {
+  calendar: ["https://www.googleapis.com/auth/calendar"],
+  gmail: ["https://www.googleapis.com/auth/gmail.modify"],
+};
+
+// Resolve a list of requested service names to their scope URLs, dropping any
+// name not in SERVICE_SCOPES and de-duplicating (two services could in principle
+// share a scope). Order is preserved for a stable, testable scope string.
+export function scopesForServices(services: string[]): string[] {
+  const out: string[] = [];
+  for (const name of services) {
+    for (const scope of SERVICE_SCOPES[name] ?? []) {
+      if (!out.includes(scope)) out.push(scope);
+    }
+  }
+  return out;
+}
+
 /** Decodes a JWT's payload claims without verifying the signature. Used to read
  *  Google's id_token, whose origin is already authenticated by the TLS exchange. */
 export function decodeJwtClaims(jwt: string): Record<string, unknown> {
@@ -19,16 +43,34 @@ export function decodeJwtClaims(jwt: string): Record<string, unknown> {
   return JSON.parse(Buffer.from(payload, "base64url").toString()) as Record<string, unknown>;
 }
 
-/** Builds the Google consent URL for a loopback redirect with a PKCE challenge. */
-export function googleAuthUrl(clientId: string, redirectUri: string, state: string, codeChallenge: string): string {
+/**
+ * Builds the Google consent URL for a loopback redirect with a PKCE challenge.
+ *
+ * `services` is an optional list of Workspace surfaces (see SERVICE_SCOPES). When
+ * empty (the default, identity-only login) the request is byte-for-byte what it
+ * always was: `openid email profile`, `access_type=online`, `prompt=select_account`
+ * — so an existing tunnel login is unchanged. When one or more grantable services
+ * are requested, their scopes are appended AND the request switches to
+ * `access_type=offline` + `prompt=consent`, because a refresh token (needed to use
+ * the grant past the access token's lifetime) is only issued for an offline,
+ * explicitly-consented grant.
+ */
+export function googleAuthUrl(
+  clientId: string,
+  redirectUri: string,
+  state: string,
+  codeChallenge: string,
+  services: string[] = [],
+): string {
+  const extra = scopesForServices(services);
   const u = new URL(GOOGLE_AUTH_URL);
   u.searchParams.set("client_id", clientId);
   u.searchParams.set("redirect_uri", redirectUri);
   u.searchParams.set("response_type", "code");
-  u.searchParams.set("scope", "openid email profile");
+  u.searchParams.set("scope", ["openid", "email", "profile", ...extra].join(" "));
   u.searchParams.set("state", state);
-  u.searchParams.set("access_type", "online");
-  u.searchParams.set("prompt", "select_account");
+  u.searchParams.set("access_type", extra.length > 0 ? "offline" : "online");
+  u.searchParams.set("prompt", extra.length > 0 ? "consent" : "select_account");
   u.searchParams.set("code_challenge", codeChallenge);
   u.searchParams.set("code_challenge_method", "S256");
   return u.toString();

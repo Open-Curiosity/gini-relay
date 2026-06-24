@@ -11,14 +11,14 @@
  *   DELETE /devices/:subdomain   revoke one (Bearer token)
  *   POST   /_frp/handler         frps server-plugin RPC (Login + NewProxy policy)
  */
-import { LOOPBACK_REDIRECTS } from "./oauth.ts";
+import { LOOPBACK_REDIRECTS, SERVICE_SCOPES } from "./oauth.ts";
 import { BANDWIDTH, CAP_BYTES, SUPPORTED_PROXY, parseBw } from "./bandwidth.ts";
 import type { Registry } from "./registry.ts";
 
 export interface AppDeps {
   registry: Registry;
   googleLive: boolean;
-  authUrl: (redirectUri: string, state: string, codeChallenge: string) => string;
+  authUrl: (redirectUri: string, state: string, codeChallenge: string, services: string[]) => string;
   exchange: (code: string, redirectUri: string, codeVerifier: string) => Promise<{ account: string; email: string | null }>;
   log?: (msg: string) => void;
   /**
@@ -78,7 +78,16 @@ export function createApp(deps: AppDeps): (req: Request) => Promise<Response> {
       if (!LOOPBACK_REDIRECTS.has(redirect_uri)) return J({ error: "redirect_uri must be a registered loopback" }, 400);
       if (!state) return J({ error: "state required" }, 400);
       if (!code_challenge) return J({ error: "code_challenge required" }, 400);
-      return J({ url: deps.authUrl(redirect_uri, state, code_challenge) });
+      // Optional `services` (comma-separated) lets the client request extra
+      // Workspace scopes. Validate against the relay's allowlist (SERVICE_SCOPES)
+      // HERE rather than trusting the client: the relay's own Google app bears the
+      // verification + quota, so a name it isn't verified for must be dropped, not
+      // forwarded. Absent/empty -> identity-only login, exactly as before.
+      const services = (url.searchParams.get("services") ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s in SERVICE_SCOPES);
+      return J({ url: deps.authUrl(redirect_uri, state, code_challenge, services) });
     }
 
     // ── login: exchange the auth code (or, in dev stub, a bare account) ──

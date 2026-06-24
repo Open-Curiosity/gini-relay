@@ -67,6 +67,39 @@ describe("/auth/google-url", () => {
     expect(r.status).toBe(200);
     expect(((await r.json()) as any).url).toBe(`url:${REDIRECT}:s:c`);
   });
+
+  it("passes a validated services list through to authUrl", async () => {
+    const app = createApp(
+      makeDeps({ googleLive: true, authUrl: (_r, _s, _c, services) => `svc:${services.join(",")}` }),
+    );
+    const r = await get(
+      app,
+      "/auth/google-url?redirect_uri=" + encodeURIComponent(REDIRECT) + "&state=s&code_challenge=c&services=calendar,gmail",
+    );
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as any).url).toBe("svc:calendar,gmail");
+  });
+
+  it("drops services not on the relay allowlist", async () => {
+    // `bogus` is not in SERVICE_SCOPES, so only `calendar` survives — the relay
+    // never forwards a scope its Google app isn't verified for.
+    const app = createApp(
+      makeDeps({ googleLive: true, authUrl: (_r, _s, _c, services) => `svc:${services.join(",")}` }),
+    );
+    const r = await get(
+      app,
+      "/auth/google-url?redirect_uri=" + encodeURIComponent(REDIRECT) + "&state=s&code_challenge=c&services=bogus,calendar",
+    );
+    expect(((await r.json()) as any).url).toBe("svc:calendar");
+  });
+
+  it("defaults to an empty services list when the param is absent", async () => {
+    const app = createApp(
+      makeDeps({ googleLive: true, authUrl: (_r, _s, _c, services) => `svc:[${services.join(",")}]` }),
+    );
+    const r = await get(app, "/auth/google-url?redirect_uri=" + encodeURIComponent(REDIRECT) + "&state=s&code_challenge=c");
+    expect(((await r.json()) as any).url).toBe("svc:[]");
+  });
 });
 
 describe("/auth/exchange", () => {
