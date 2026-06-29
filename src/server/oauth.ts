@@ -21,6 +21,8 @@ export const LOOPBACK_REDIRECTS = new Set(LOOPBACK_PORTS.map((p) => `http://127.
 export const SERVICE_SCOPES: Record<string, string[]> = {
   calendar: ["https://www.googleapis.com/auth/calendar"],
   gmail: ["https://www.googleapis.com/auth/gmail.modify"],
+  drive: ["https://www.googleapis.com/auth/drive"],
+  sheets: ["https://www.googleapis.com/auth/spreadsheets"],
 };
 
 // Resolve a list of requested service names to their scope URLs, dropping any

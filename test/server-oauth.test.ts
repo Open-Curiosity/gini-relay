@@ -99,6 +99,15 @@ describe("googleAuthUrl", () => {
     expect(u.searchParams.get("prompt")).toBe("consent");
   });
 
+  it("appends the drive and sheets scopes when those services are requested", () => {
+    const u = new URL(googleAuthUrl(CLIENT_ID, REDIRECT, "s", "c", ["drive", "sheets"]));
+    expect(u.searchParams.get("scope")).toBe(
+      "openid email profile https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/spreadsheets",
+    );
+    expect(u.searchParams.get("access_type")).toBe("offline");
+    expect(u.searchParams.get("prompt")).toBe("consent");
+  });
+
   it("drops unknown service names and stays identity-only when none resolve", () => {
     // An all-unknown list resolves to zero extra scopes, so the request must NOT
     // flip to offline/consent — it stays a plain identity login.
@@ -114,6 +123,22 @@ describe("scopesForServices", () => {
     expect(scopesForServices(["calendar", "gmail"])).toEqual([
       "https://www.googleapis.com/auth/calendar",
       "https://www.googleapis.com/auth/gmail.modify",
+    ]);
+  });
+
+  it("maps drive and sheets to their scope URLs", () => {
+    expect(scopesForServices(["drive", "sheets"])).toEqual([
+      "https://www.googleapis.com/auth/drive",
+      "https://www.googleapis.com/auth/spreadsheets",
+    ]);
+  });
+
+  it("maps the full four-service set in request order", () => {
+    expect(scopesForServices(["calendar", "gmail", "drive", "sheets"])).toEqual([
+      "https://www.googleapis.com/auth/calendar",
+      "https://www.googleapis.com/auth/gmail.modify",
+      "https://www.googleapis.com/auth/drive",
+      "https://www.googleapis.com/auth/spreadsheets",
     ]);
   });
 
