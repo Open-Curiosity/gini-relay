@@ -39,6 +39,12 @@ describe("validatePort", () => {
   it("rejects non-integer values", () => {
     expect(validatePort("8.5")).toBeNull();
   });
+
+  it("rejects hexadecimal, exponent, and newline-suffixed input", () => {
+    for (const port of ["0x1f90", "8e3", "8080\n"]) {
+      expect(validatePort(port)).toBeNull();
+    }
+  });
 });
 
 describe("buildTunnel", () => {
