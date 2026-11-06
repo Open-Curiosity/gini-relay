@@ -40,8 +40,11 @@ export function buildTunnel(opts: TunnelOptions): Frpc {
   return new Frpc({ ...frpcOpts, config, readyWhen: frpcOpts.readyWhen ?? isProxyStartLine });
 }
 
-/** Parses a port argument; returns the integer port or null if out of range. */
+/** Parses an ASCII decimal port argument; returns null if invalid or out of range. */
 export function validatePort(portArg: string): number | null {
+  if (portArg.length === 0 || [...portArg].some((digit) => digit < "0" || digit > "9")) {
+    return null;
+  }
   const port = Number(portArg);
   return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : null;
 }
